@@ -75,12 +75,17 @@ static constexpr int kNumStages = sizeof(kStages) / sizeof(kStages[0]);
 
 // ------------------------------- one workload ------------------------------
 // Runs the stages on an (H x W, K) workload.
-//   only   : nullptr / "all" -> every stage; otherwise just naive + the named stage.
-//   show   : print the per-stage timing table.
-//   scored : also compute and print the autograder score (returned).
+//   only        : nullptr / "all" -> every stage; otherwise just the named stage.
+//   show        : print the per-stage timing table.
+//   scored      : also compute and print the autograder score (returned).
+//   with_naive  : also TIME conv_naive as the speedup baseline. The naive reference
+//                 OUTPUT is always computed regardless (see `ref` below), so the
+//                 `correct` column still works when this is false; only the
+//                 `speedup` column goes away. Skipping it makes the custom-workload
+//                 modes much faster to iterate on, since naive dominates their runtime.
 // When !scored the function returns the number of INCORRECT scored stages that ran.
 static double run_config(int H, int W, int K, unsigned seed, const char* only,
-                         bool show, bool scored) {
+                         bool show, bool scored, bool with_naive = true) {
     float* img = pa1::alloc_floats(static_cast<std::size_t>(H) * W);
     float* ker = pa1::alloc_floats(static_cast<std::size_t>(K) * K);
     float* out = pa1::alloc_floats(static_cast<std::size_t>(H) * W);
@@ -113,7 +118,9 @@ static double run_config(int H, int W, int K, unsigned seed, const char* only,
 
     for (int s = 0; s < kNumStages; ++s) {
         const bool is_naive = (kStages[s].fn == conv_naive);
-        // In single-stage mode, always run naive (baseline/reference) + the chosen stage.
+        // Correctness always compares against `ref` (computed above), so naive only
+        // needs to RUN here when it is wanted as the timed speedup baseline.
+        if (is_naive && !with_naive) continue;
         if (!all && !is_naive && std::strcmp(kStages[s].key, only) != 0) continue;
 
         auto run = [&]() { kStages[s].fn(in, out, ker, H, W, K); };
@@ -134,8 +141,11 @@ static double run_config(int H, int W, int K, unsigned seed, const char* only,
         }
 
         if (show) {
-            std::printf("%-14s  %-7s  %10.3f  %10.2f  %8.2fx\n", kStages[s].name,
-                        ok ? "yes" : "NO", ms, gflops, speedup);
+            char sp[16];
+            if (naive_ms > 0.0) std::snprintf(sp, sizeof(sp), "%8.2fx", speedup);
+            else                std::snprintf(sp, sizeof(sp), "%9s", "--");
+            std::printf("%-14s  %-7s  %10.3f  %10.2f  %s\n", kStages[s].name,
+                        ok ? "yes" : "NO", ms, gflops, sp);
         }
     }
 
@@ -251,6 +261,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    run_config(H, W, K, seed, stage, /*show=*/true, /*scored=*/false);
+    run_config(H, W, K, seed, stage, /*show=*/true, /*scored=*/false,
+               /*with_naive=*/false);
     return 0;
 }
