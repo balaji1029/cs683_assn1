@@ -15,16 +15,15 @@ void matmul_prefetch(const float* A, const float* B, float* C, int M, int N, int
             float acc = 0.0f;
             const float* a = A + i * lda;
             const float* b = B + j * ldb;
-            for (int p = 0; p < K; ++p) {
-                
+            int p = 0;
+            for (; p + 16 <= K; p += 16) {
 #if PF_DIST > 0
-                if (p + PF_DIST < K) {
-                    _mm_prefetch((const char*)(a + p + PF_DIST), PF_HINT);
-                    _mm_prefetch((const char*)(b + p + PF_DIST), PF_HINT);
-                }
+                _mm_prefetch((const char*)(a + p + PF_DIST), PF_HINT);
+                _mm_prefetch((const char*)(b + p + PF_DIST), PF_HINT);
 #endif
-                acc += a[p] * b[p];
+                for (int q = p; q < p + 16; ++q) acc += a[q] * b[q];
             }
+            for (; p < K; ++p) acc += a[p] * b[p];
             C[i * ldc + j] = acc;
         }
     }
